@@ -183,10 +183,12 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 	// move to the next token
 	p.nextToken()
 
-	// skip the expressions until semicolon
-	for !p.expectPeek(token.SEMICOLON) {
-		p.nextToken()
-	}
+	// parse the return Expression.
+	stmt.ReturnValue = p.parseExpression(LOWEST)
+
+	// advance the curToken if the next token is semicolon.
+	p.expectPeek(token.SEMICOLON)
+
 	return stmt
 }
 
@@ -399,7 +401,6 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
 		}
-		fmt.Println(stmt.String())
 		p.nextToken()
 	}
 	return block
@@ -443,7 +444,6 @@ func (p *Parser) parseFunctionParameters() []*ast.Identifier {
 	parameters := []*ast.Identifier{}
 
 	if p.peekTokenIs(token.RPAREN) {
-		fmt.Println("next token is ')'")
 		p.nextToken()
 		return nil
 	}

@@ -145,6 +145,7 @@ func (rs *ReturnStatement) String() string {
 // monkey support the following expreesion statement
 // let x = 5;
 // x + 10;
+// It implements the Statement interface.
 type ExpressionStatement struct {
 	Token      *token.Token // The first token of the expression e.g. x in x + 10
 	Expression Expression
