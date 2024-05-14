@@ -30,30 +30,30 @@ func isError(obj object.Object) bool {
 // The top level function to evaluate nodes in the ast
 // It calls itself recursively whenever it encounters an expression
 // Otherwise it delegates it to other functions
-func Eval(node ast.Node) object.Object {
+func Eval(node ast.Node, env *object.Environment) object.Object {
 	switch node := node.(type) {
 	case *ast.Program:
-		return evalProgram(node.Statements)
+		return evalProgram(node.Statements, env)
 	case *ast.ExpressionStatement:
-		return Eval(node.Expression)
+		return Eval(node.Expression, env)
 	case *ast.IntegerLiteral:
 		return &object.Integer{Value: node.Value}
 	case *ast.Boolean:
 		return nativeBoolToBooleanObject(node.Value)
 	case *ast.PrefixExpression:
-		right := Eval(node.Right)
+		right := Eval(node.Right, env)
 		if isError(right) {
 			return right
 		}
 		return evalPrefixExpression(node.Operator, right)
 	case *ast.InfixExpression:
-		left := Eval(node.Left)
+		left := Eval(node.Left, env)
 
 		if isError(left) {
 			return left
 		}
 
-		right := Eval(node.Right)
+		right := Eval(node.Right, env)
 
 		if isError(right) {
 			return right
@@ -61,15 +61,37 @@ func Eval(node ast.Node) object.Object {
 
 		return evalInfixExpression(node.Operator, left, right)
 	case *ast.IfExpression:
-		return evalIfExpression(node)
+		return evalIfExpression(node, env)
 	case *ast.BlockStatement:
-		return evalBlockStatement(node)
+		return evalBlockStatement(node, env)
 	case *ast.ReturnStatement:
-		val := Eval(node.ReturnValue)
+		val := Eval(node.ReturnValue, env)
 		if isError(val) {
 			return val
 		}
 		return &object.ReturnValue{Value: val}
+	case *ast.LetStatement:
+		val := Eval(node.Value, env)
+		if isError(val) {
+			return val
+		}
+		env.Set(node.Name.Value, val)
+	case *ast.Identifier:
+		return evalIdentifier(node, env)
+	case *ast.FunctionLiteral:
+		params := node.Parameters
+		body := node.Body
+		return &object.Function{Parameters: params, Body: body, Env: env}
+	case *ast.CallExpression:
+		function := Eval(node.Function, env)
+		if isError(function) {
+			return function
+		}
+		args := evalExpressions(node.Arguments, env)
+		if len(args) == 1 && isError(args[0]) {
+			return args[0]
+		}
+		return applyFunction(function, args)
 	}
 	return nil
 }
@@ -82,12 +104,27 @@ func nativeBoolToBooleanObject(val bool) object.Object {
 	return FALSE
 }
 
+// this function is used to evaluate a list of expressions
+// e.g. list of arguments to a function.
+func evalExpressions(expressions []ast.Expression, env *object.Environment) []object.Object {
+	var result []object.Object
+
+	for _, e := range expressions {
+		evaluated := Eval(e, env)
+		if isError(evaluated) {
+			return []object.Object{evaluated}
+		}
+		result = append(result, evaluated)
+	}
+	return result
+}
+
 // This function evaulates all the statements in a Statement slice
 // by calling Eval on each statement.
-func evalProgram(stmts []ast.Statement) object.Object {
+func evalProgram(stmts []ast.Statement, env *object.Environment) object.Object {
 	var result object.Object
 	for _, stmt := range stmts {
-		result = Eval(stmt)
+		result = Eval(stmt, env)
 
 		switch result := result.(type) {
 		case *object.ReturnValue:
@@ -184,17 +221,17 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 }
 
 // This function evalutes an if expression
-func evalIfExpression(ie *ast.IfExpression) object.Object {
-	condition := Eval(ie.Condition)
+func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Object {
+	condition := Eval(ie.Condition, env)
 
 	if isError(condition) {
 		return condition
 	}
 
 	if isTruthy(condition) {
-		return Eval(ie.Consequence)
+		return Eval(ie.Consequence, env)
 	} else if ie.Alternative != nil {
-		return Eval(ie.Alternative)
+		return Eval(ie.Alternative, env)
 	} else {
 		return NULL
 	}
@@ -220,11 +257,11 @@ func isTruthy(obj object.Object) bool {
 // function that evaluates block statements.
 // It's different as it makes sure to terminate the execution of the block
 // when it encounters a return statement.
-func evalBlockStatement(node *ast.BlockStatement) object.Object {
+func evalBlockStatement(node *ast.BlockStatement, env *object.Environment) object.Object {
 	var result object.Object
 
 	for _, stmt := range node.Statements {
-		result = Eval(stmt)
+		result = Eval(stmt, env)
 
 		if result != nil {
 			rt := result.Type()
@@ -234,5 +271,48 @@ func evalBlockStatement(node *ast.BlockStatement) object.Object {
 		}
 	}
 
+	return result
+}
+
+// evaluates identifiers by return their values
+func evalIdentifier(node *ast.Identifier, env *object.Environment) object.Object {
+	val, ok := env.Get(node.Value)
+	if !ok {
+		return newError("identifier not found!: " + node.Value)
+	}
+	return val
+}
+
+// evaluates a function call with the specified arguments.
+func applyFunction(fn object.Object, args []object.Object) object.Object {
+	function, ok := fn.(*object.Function)
+	if !ok {
+		return newError("not a function: %s", fn.Type())
+	}
+	extendedEnv := extendFunctionEnv(function, args)
+	evaluated := Eval(function.Body, extendedEnv)
+	return unwrapReturnValue(evaluated)
+}
+
+// this function creates a new environment and attaches it to the environment
+// the function has. The environment that the function has already is the env
+// that it was defined in.
+func extendFunctionEnv(function *object.Function, args []object.Object) *object.Environment {
+	newEnv := object.NewEnclosedEnvironment(function.Env)
+
+	for paramIdx, param := range function.Parameters {
+		newEnv.Set(param.Value, args[paramIdx])
+	}
+
+	return newEnv
+}
+
+// this function checks if the object type is ReturnValue.
+// if yes it then returns the Value of the ReturnValue object
+// otherwise it is an error and return that.
+func unwrapReturnValue(result object.Object) object.Object {
+	if returnVal, ok := result.(*object.ReturnValue); ok {
+		return returnVal.Value
+	}
 	return result
 }

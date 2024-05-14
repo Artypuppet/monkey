@@ -30,15 +30,17 @@ func TestEvalIntegerExpression(t *testing.T) {
 		{"(5 + 10 * 2 + 15 / 3) * 2 + -10", 50},
 	}
 	for _, tt := range tests {
-		evaluated := testEval(tt.input)
+		evaluated := testEval(t, tt.input)
 		testIntegerObject(t, evaluated, tt.expected)
 	}
 }
-func testEval(input string) object.Object {
+func testEval(t *testing.T, input string) object.Object {
 	l := lexer.New(input)
 	p := parser.New(l)
 	program := p.ParseProgram()
-	return Eval(program)
+	checkParserErrors(t, p)
+	env := object.NewEnvironment()
+	return Eval(program, env)
 }
 func testIntegerObject(t *testing.T, obj object.Object, expected int64) bool {
 	result, ok := obj.(*object.Integer)
@@ -80,7 +82,7 @@ func TestEvalBooleanExpression(t *testing.T) {
 		{"(1 > 2) == false", true},
 	}
 	for _, tt := range tests {
-		evaluated := testEval(tt.input)
+		evaluated := testEval(t, tt.input)
 		testBooleanObject(t, evaluated, tt.expected)
 	}
 }
@@ -113,7 +115,7 @@ func TestBangOperator(t *testing.T) {
 		{"!!5", true},
 	}
 	for _, tt := range tests {
-		evaluated := testEval(tt.input)
+		evaluated := testEval(t, tt.input)
 		testBooleanObject(t, evaluated, tt.expected)
 	}
 }
@@ -132,7 +134,7 @@ func TestIfElseExpressions(t *testing.T) {
 		{"if (1 < 2) { 10 } else { 20 }", 10},
 	}
 	for _, tt := range tests {
-		evaluated := testEval(tt.input)
+		evaluated := testEval(t, tt.input)
 		integer, ok := tt.expected.(int)
 		if ok {
 			testIntegerObject(t, evaluated, int64(integer))
@@ -171,7 +173,7 @@ func TestReturnStatements(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		evaluated := testEval(tt.input)
+		evaluated := testEval(t, tt.input)
 		testIntegerObject(t, evaluated, tt.expected)
 	}
 }
@@ -216,9 +218,13 @@ func TestErrorHandling(t *testing.T) {
 	`,
 			"unknown operator: BOOLEAN + BOOLEAN",
 		},
+		{
+			"foobar",
+			"identifier not found: foobar",
+		},
 	}
 	for _, tt := range tests {
-		evaluated := testEval(tt.input)
+		evaluated := testEval(t, tt.input)
 		errObj, ok := evaluated.(*object.Error)
 		if !ok {
 			t.Errorf("no error object returned. got=%T(%+v), input: %s",
@@ -231,4 +237,93 @@ func TestErrorHandling(t *testing.T) {
 
 		}
 	}
+}
+
+func TestLetStatements(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		// {"let a = 5; a;", 5},
+		// {"let a = 5 * 5; a;", 25},
+		{"let a = 5; let b = a; b = 7;", 5},
+		// {"let a = 5; let b = a; let c = a + b + 5; c;", 15},
+	}
+
+	for _, tt := range tests {
+		testIntegerObject(t, testEval(t, tt.input), tt.expected)
+	}
+}
+
+func checkParserErrors(t *testing.T, p *parser.Parser) {
+	errors := p.Errors()
+	if len(errors) == 0 {
+		return
+	}
+
+	t.Errorf("parser has %d errors", len(errors))
+	for _, msg := range errors {
+		t.Errorf("parser error: %q", msg)
+	}
+	t.FailNow()
+}
+
+func TestFunctionObject(t *testing.T) {
+	input := "fn(x) { x + 2; };"
+	evaluated := testEval(t, input)
+	fn, ok := evaluated.(*object.Function)
+	if !ok {
+		t.Fatalf("object is not Function. got=%T (%+v)", evaluated, evaluated)
+	}
+	if len(fn.Parameters) != 1 {
+		t.Fatalf("function has wrong parameters. Parameters=%+v",
+			fn.Parameters)
+	}
+	if fn.Parameters[0].String() != "x" {
+		t.Fatalf("parameter is not 'x'. got=%q", fn.Parameters[0])
+	}
+	expectedBody := "(x + 2)"
+	if fn.Body.String() != expectedBody {
+		t.Fatalf("body is not %q. got=%q", expectedBody, fn.Body.String())
+	}
+}
+
+func TestFunctionApplication(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		{"let identity = fn(x) { x; }; identity(5);", 5},
+		{"let identity = fn(x) { return x; }; identity(5);", 5},
+		{"let double = fn(x) { x * 2; }; double(5);", 10},
+		{"let add = fn(x, y) { x + y; }; add(5, 5);", 10},
+		{"let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20},
+		{"fn(x) { x; }(5)", 5},
+	}
+	for _, tt := range tests {
+		testIntegerObject(t, testEval(t, tt.input), tt.expected)
+	}
+}
+
+// This works because the inner function has its own environemnt
+// that has a ptr to the environment of the outer function.
+// the outer function's enviroment itself has a ptr to the environment
+// outside it. So when the newAdder(2); function calls is made the,
+// the environemnt of newAdder is created and a literal is added to its map
+// i.e. x with value 2 and the rest of the body is executed which returns
+// a function literal in its object representation i.e. object.FunctionLiteral
+// and its environment is actually the environment of newAdder.
+// when addTwo(2) call is made, a new environment is created for it with a ptr
+// to the environment that is associated with the defintion of addTwo which is
+// actually the environment of newAdder. So now it has access to the value of x.
+// and then it can use it by calling Get on its map, which will not actually contain
+// it but Get will then Get for the outer map.
+func TestClosures(t *testing.T) {
+	input := `
+	let newAdder = fn(x) {
+	fn(y) { x + y };
+	};
+	let addTwo = newAdder(2);
+	addTwo(2);`
+	testIntegerObject(t, testEval(t, input), 4)
 }

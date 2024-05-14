@@ -1,6 +1,12 @@
 package object
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+	"strings"
+
+	ast "github.com/Artypuppet/monkey/ast"
+)
 
 // ------------------------------Object---------------------------------
 
@@ -12,6 +18,7 @@ const (
 	NULL_OBJ         = "NULL"
 	RETURN_VALUE_OBJ = "RETURN_VALUE"
 	ERROR_OBJ        = "ERROR"
+	FUNCTION_OBJ     = "FUNCTION"
 )
 
 // this interface defines the top level value representation of
@@ -30,7 +37,7 @@ type Object interface {
 // It implements the Object interface.
 // Whenever we encounter an integer literal in the source code we first turn it into an
 // ast.IntegerLiteral and then, when evaluating that AST node, we turn it into an
-///object.Integer, saving the value inside our struct and passing around a reference to
+// /object.Integer, saving the value inside our struct and passing around a reference to
 // this struct.
 type Integer struct {
 	Value int64
@@ -114,4 +121,85 @@ func (e *Error) Type() ObjectType {
 
 func (e *Error) Inspect() string {
 	return "ERROR: " + e.Message
+}
+
+// --------------------------------Environment------------------------
+
+// struct defining the environment object to keep track of variables
+// bindings etc.
+// PITFALL: maps are reference types as in they are not copied when passing
+// to a function or returned from a function.
+type Environment struct {
+	store map[string]Object
+	outer *Environment
+}
+
+// Function to that return an an instance of the Environment struct
+func NewEnvironment() *Environment {
+	s := make(map[string]Object)
+	return &Environment{store: s, outer: nil}
+}
+
+// Function that returns a new Environment with a ptr to its outer environment
+func NewEnclosedEnvironment(outer *Environment) *Environment {
+	enclosed := NewEnvironment()
+	enclosed.outer = outer
+	return enclosed
+}
+
+// method to get the object associated with an identifier
+// The identifier here is node.Name.Value where node is a LetStatement
+// Name is an identifier struct and Value is a string.
+// It checks if the identifier already exists in the environment
+// If not it then calls get in its outer environment.
+// This mechanism helps enforce function scope wherein functions
+// can reference variables outside then defintion but outer variable with
+// the same name as the function parameter will always reference the parameter.
+func (e *Environment) Get(identifier string) (Object, bool) {
+	obj, ok := e.store[identifier]
+	if !ok && e.outer != nil {
+		obj, ok = e.outer.Get(identifier)
+	}
+	return obj, ok
+}
+
+// method to set the object for an identifier
+// The identifier here is node.Name.Value where node is a LetStatement
+// Name is an identifier struct and Value is a string.
+func (e *Environment) Set(identifier string, val Object) Object {
+	e.store[identifier] = val
+	return val
+}
+
+// -----------------------------Function Object-----------------------
+
+// struct to represent function object in our environment
+// It implements the Object interface.
+type Function struct {
+	Parameters []*ast.Identifier
+	Body       *ast.BlockStatement
+	Env        *Environment
+}
+
+// methods to implement the object interface
+func (f *Function) Type() ObjectType {
+	return FUNCTION_OBJ
+}
+
+func (f *Function) Inspect() string {
+	var out bytes.Buffer
+
+	params := []string{}
+
+	for _, p := range f.Parameters {
+		params = append(params, p.String())
+	}
+	out.WriteString("fn")
+	out.WriteString("(")
+	out.WriteString(strings.Join(params, ", "))
+	out.WriteString(") {\n")
+	out.WriteString(f.Body.String())
+	out.WriteString("\n}")
+
+	return out.String()
 }
