@@ -76,6 +76,14 @@ func (l *Lexer) NextToken() *token.Token {
 		tok = newToken(token.LT, l.ch)
 	case '>':
 		tok = newToken(token.GT, l.ch)
+	case '[':
+		tok = newToken(token.LBRACKET, l.ch)
+	case ']':
+		tok = newToken(token.RBRACKET, l.ch)
+	case '"':
+		tok = &token.Token{}
+		tok.Type = token.STRING
+		tok.Literal = l.readString()
 	case 0:
 		tok = newToken(token.EOF, 0)
 		tok.Literal = ""
@@ -150,4 +158,19 @@ func isDigitFirst(ch byte) bool {
 // function that check if a character is a digit.
 func isDigit(ch byte) bool {
 	return ('0' <= ch && ch <= '9')
+}
+
+// function that lexes a string. It is called whenever a " is encountered
+// It parses all the bytes followed and turns them into a string literal
+// until the closing " is encountered. The string returned is the actual
+// literal without the "" quotes.
+func (l *Lexer) readString() string {
+	position := l.position + 1
+	for {
+		l.readChar()
+		if l.ch == '"' || l.ch == 0 {
+			break
+		}
+	}
+	return l.input[position:l.position]
 }

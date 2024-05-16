@@ -187,6 +187,27 @@ func (il *IntegerLiteral) String() string {
 	return il.Token.Literal
 }
 
+// -----------------------------------String Literal----------------------------
+// struct that represents the string node in the ast
+// It implements the expression interface as it is
+// similar to the integer literal as string literals
+// are expressions that produce values.
+type StringLiteral struct {
+	Token *token.Token
+	Value string
+}
+
+// methods to satisfy the Expression Interface
+func (sl *StringLiteral) expressionNode() {}
+
+func (sl *StringLiteral) TokenLiteral() string {
+	return sl.Token.Literal
+}
+
+func (sl *StringLiteral) String() string {
+	return sl.Token.Literal
+}
+
 // -----------------------------Prefix Expression Node--------------------------
 // struct representing a prefix expression
 // It implements the Expression Interface
@@ -385,6 +406,36 @@ func (ce *CallExpression) String() string {
 	out.WriteString("(")
 	out.WriteString(strings.Join(args, ", "))
 	out.WriteString(")")
+
+	return out.String()
+}
+
+// -------------------------------Array Literal------------------------------
+
+// struct representing an array literal in the ast
+// It implements the expression interface
+type ArrayLiteral struct {
+	Token    *token.Token // it is the '[' token.
+	Elements []Expression
+}
+
+// methods to implement the expression interface
+func (al *ArrayLiteral) expressionNode() {}
+
+func (al *ArrayLiteral) TokenLiteral() string {
+	return al.Token.Literal
+}
+
+func (al *ArrayLiteral) String() string {
+	var out bytes.Buffer
+
+	elements := []string{}
+	for _, el := range al.Elements {
+		elements = append(elements, el.String())
+	}
+	out.WriteString("[")
+	out.WriteString(strings.Join(elements, ", "))
+	out.WriteString("]")
 
 	return out.String()
 }

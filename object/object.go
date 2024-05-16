@@ -12,13 +12,18 @@ import (
 
 type ObjectType string
 
+// This is typedef for builtin functions that can be called within monkey
+type BuiltinFunction func(args ...Object) Object
+
 const (
 	INTEGER_OBJ      = "INTEGER"
+	STRING_OBJ       = "STRING"
 	BOOLEAN_OBJ      = "BOOLEAN"
 	NULL_OBJ         = "NULL"
 	RETURN_VALUE_OBJ = "RETURN_VALUE"
 	ERROR_OBJ        = "ERROR"
 	FUNCTION_OBJ     = "FUNCTION"
+	BUILTIN_OBJ      = "BUILTIN"
 )
 
 // this interface defines the top level value representation of
@@ -37,7 +42,7 @@ type Object interface {
 // It implements the Object interface.
 // Whenever we encounter an integer literal in the source code we first turn it into an
 // ast.IntegerLiteral and then, when evaluating that AST node, we turn it into an
-// /object.Integer, saving the value inside our struct and passing around a reference to
+// object.Integer, saving the value inside our struct and passing around a reference to
 // this struct.
 type Integer struct {
 	Value int64
@@ -50,6 +55,23 @@ func (i *Integer) Type() ObjectType {
 
 func (i *Integer) Inspect() string {
 	return fmt.Sprintf("%d", i.Value)
+}
+
+// ----------------------------String Literal-----------------------------
+
+// struct defining the internal representation for a string literal
+// It implements the Object interface.
+type String struct {
+	Value string
+}
+
+// Methods implementing the Object interface.
+func (s *String) Type() ObjectType {
+	return STRING_OBJ
+}
+
+func (s *String) Inspect() string {
+	return s.Value
 }
 
 // ----------------------------Boolean Literal----------------------------
@@ -202,4 +224,21 @@ func (f *Function) Inspect() string {
 	out.WriteString("\n}")
 
 	return out.String()
+}
+
+// --------------------------Builtin Function-------------------------
+
+// stuct that is a wrapper around a builtin function
+// It implements the object interface.
+type Builtin struct {
+	Fn BuiltinFunction
+}
+
+// methods implementing the object interface.
+func (b *Builtin) Type() ObjectType {
+	return BUILTIN_OBJ
+}
+
+func (b *Builtin) Inspect() string {
+	return "builtin function"
 }

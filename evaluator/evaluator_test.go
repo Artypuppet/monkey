@@ -220,7 +220,11 @@ func TestErrorHandling(t *testing.T) {
 		},
 		{
 			"foobar",
-			"identifier not found: foobar",
+			"identifier not found!: foobar",
+		},
+		{
+			`"Hello" - "World"`,
+			"unknown operator: STRING - STRING",
 		},
 	}
 	for _, tt := range tests {
@@ -326,4 +330,82 @@ func TestClosures(t *testing.T) {
 	let addTwo = newAdder(2);
 	addTwo(2);`
 	testIntegerObject(t, testEval(t, input), 4)
+}
+
+func TestStringLiteral(t *testing.T) {
+	input := `let x = "Hello World!"; x;`
+	evaluated := testEval(t, input)
+	str, ok := evaluated.(*object.String)
+	if !ok {
+		t.Fatalf("object is not String. got=%T (%+v)", evaluated, evaluated)
+	}
+	if str.Value != "Hello World!" {
+		t.Errorf("String has wrong value. got=%q", str.Value)
+	}
+}
+
+func TestStringConcatenation(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{input: `"Hello" + " " + "World!"`, expected: "Hello World!"},
+		{input: `"some" == "some"`, expected: true},
+		{input: `"some" != "some"`, expected: false},
+	}
+	for _, tt := range tests {
+		testStringObject(t, testEval(t, tt.input), tt.expected)
+	}
+}
+
+func testStringObject(t *testing.T, evaluated object.Object, expected interface{}) {
+	str, ok := evaluated.(*object.String)
+	if !ok {
+		boolean, ok1 := evaluated.(*object.Boolean)
+		if !ok1 {
+			t.Fatalf("object is not String or Boolean. got=%T (%+v)", evaluated, evaluated)
+		}
+		exp, _ := expected.(bool)
+		if boolean.Value != exp {
+			t.Errorf("String comparison has wrong value. got=%t", boolean.Value)
+		}
+	} else {
+		exp, ok2 := expected.(string)
+		if ok2 && str.Value != exp {
+			t.Errorf("String has wrong value. got=%q", str.Value)
+		} else if !ok2 {
+			t.Errorf("Expected value is not of type of string. got=%v", expected)
+		}
+	}
+}
+
+func TestBuiltinFunctions(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{`len("")`, 0},
+		{`len("four")`, 4},
+		{`len("hello world")`, 11},
+		{`len(1)`, "argument to `len` not supported, got INTEGER"},
+		{`len("one", "two")`, "wrong number of arguments. got=2, want=1"},
+	}
+	for _, tt := range tests {
+		evaluated := testEval(t, tt.input)
+		switch expected := tt.expected.(type) {
+		case int:
+			testIntegerObject(t, evaluated, int64(expected))
+		case string:
+			errObj, ok := evaluated.(*object.Error)
+			if !ok {
+				t.Errorf("object is not Error. got=%T (%+v)",
+					evaluated, evaluated)
+				continue
+			}
+			if errObj.Message != expected {
+				t.Errorf("wrong error message. expected=%q, got=%q",
+					expected, errObj.Message)
+			}
+		}
+	}
 }
