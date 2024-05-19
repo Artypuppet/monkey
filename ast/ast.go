@@ -439,3 +439,31 @@ func (al *ArrayLiteral) String() string {
 
 	return out.String()
 }
+
+// -------------------------------Index Expression--------------------------
+
+// struct implementing the index access to an array
+type IndexExpression struct {
+	Token *token.Token // the '[' token.
+	Left  Expression   // could be an identifier for an array or an array literal or a function call.
+	Index Expression   // [0] access.
+}
+
+// method to implement the expression interface
+func (ie *IndexExpression) expressionNode() {}
+
+func (ie *IndexExpression) TokenLiteral() string {
+	return ie.Token.Literal
+}
+
+func (ie *IndexExpression) String() string {
+	var out bytes.Buffer
+
+	out.WriteString("(")
+	out.WriteString(ie.Left.String())
+	out.WriteString("[")
+	out.WriteString(ie.Index.String())
+	out.WriteString("])")
+
+	return out.String()
+}

@@ -26,6 +26,7 @@ func TestNextToken(t *testing.T) {
 	"foobar"
 	"foo bar"
 	[1, 2];
+	{"foo": "bar"}
 	`
 	tests := []struct {
 		expectedType    token.TokenType

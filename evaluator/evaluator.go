@@ -13,7 +13,7 @@ var (
 	FALSE = &object.Boolean{Value: false}
 )
 
-// map that contains ptrs to builting functions
+// map that contains ptrs to builtin functions
 var builtins = map[string]*object.Builtin{
 	"len": &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
@@ -24,10 +24,86 @@ var builtins = map[string]*object.Builtin{
 			switch arg := args[0].(type) {
 			case *object.String:
 				return &object.Integer{Value: int64(len(arg.Value))}
+			case *object.Array:
+				return &object.Integer{Value: int64(len(arg.Elements))}
 			default:
 				return newError("argument to `len` not supported, got %s",
 					args[0].Type())
 			}
+		},
+	},
+	"first": &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `first` must be ARRAY, got %s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			if len(arr.Elements) > 0 {
+				return arr.Elements[0]
+			}
+			return NULL
+		},
+	},
+	"last": &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `last` must be ARRAY, got %s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			length := len(arr.Elements)
+			if length > 0 {
+				return arr.Elements[length-1]
+			}
+			return NULL
+		},
+	},
+	"rest": &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `rest` must be ARRAY, got %s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			length := len(arr.Elements)
+			if length > 0 {
+				newElements := make([]object.Object, length-1, length-1)
+				copy(newElements, arr.Elements[1:length])
+				return &object.Array{Elements: newElements}
+			}
+			return NULL
+		},
+	},
+	"push": &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return newError("wrong number of arguments. got=%d, want=2",
+					len(args))
+			}
+			if args[0].Type() != object.ARRAY_OBJ {
+				return newError("argument to `push` must be ARRAY, got %s",
+					args[0].Type())
+			}
+			arr := args[0].(*object.Array)
+			length := len(arr.Elements)
+			newElements := make([]object.Object, length+1, length+1)
+			copy(newElements, arr.Elements)
+			newElements[length] = args[1]
+			return &object.Array{Elements: newElements}
 		},
 	},
 }
@@ -51,6 +127,16 @@ func isError(obj object.Object) bool {
 // Otherwise it delegates it to other functions
 func Eval(node ast.Node, env *object.Environment) object.Object {
 	switch node := node.(type) {
+	case *ast.IndexExpression:
+		left := Eval(node.Left, env)
+		if isError(left) {
+			return left
+		}
+		index := Eval(node.Index, env)
+		if isError(index) {
+			return index
+		}
+		return evalIndexExpression(left, index)
 	case *ast.Program:
 		return evalProgram(node.Statements, env)
 	case *ast.ExpressionStatement:
@@ -113,6 +199,12 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 			return args[0]
 		}
 		return applyFunction(function, args)
+	case *ast.ArrayLiteral:
+		elements := evalExpressions(node.Elements, env)
+		if len(elements) == 1 && isError(elements[0]) {
+			return elements[0]
+		}
+		return &object.Array{Elements: elements}
 	}
 	return nil
 }
@@ -360,4 +452,27 @@ func unwrapReturnValue(result object.Object) object.Object {
 		return returnVal.Value
 	}
 	return result
+}
+
+// This function evaluates an index expression
+func evalIndexExpression(left object.Object, index object.Object) object.Object {
+	switch {
+	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+		return evalArrayIndexExpression(left, index)
+	default:
+		return newError("index operator not supported: %s", left.Type())
+	}
+}
+
+// This function evaluates an array index expression
+func evalArrayIndexExpression(array object.Object, index object.Object) object.Object {
+	arrayObject := array.(*object.Array)
+	idx := index.(*object.Integer).Value
+	max := int64((len(arrayObject.Elements) - 1))
+
+	if idx < 0 || idx > max {
+		return NULL
+	}
+
+	return arrayObject.Elements[idx]
 }
